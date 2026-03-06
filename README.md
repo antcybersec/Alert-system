@@ -1,4 +1,4 @@
-# 🚨 Nagar Alert System (Team SYNC)
+# 🚨 Nagar Alert System
 > **Revolutionizing Civic Issue Reporting with AI-Powered WhatsApp Bot & Real-Time Dashboard**
 
 ![Tech Stack](https://img.shields.io/badge/Stack-MERN%20%2B%20Firebase%20%2B%20AI-blue)
@@ -75,6 +75,7 @@ Create a `.env` file in both `frontend` and `backend` using the provided `.env.s
 - [x] WhatsApp Alert Broadcasting
 
 ---
+
 
 
 
