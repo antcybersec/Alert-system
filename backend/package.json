@@ -1,0 +1,31 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google-cloud/vertexai": "^1.10.0",
+    "@turf/distance": "^7.3.2",
+    "@turf/helpers": "^7.3.2",
+    "axios": "^1.13.2",
+    "body-parser": "^2.2.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-session": "^1.18.2",
+    "firebase": "^12.7.0",
+    "firebase-admin": "^13.6.0",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.12",
+    "twilio": "^5.11.2",
+    "uuid": "^9.0.1"
+  }
+}

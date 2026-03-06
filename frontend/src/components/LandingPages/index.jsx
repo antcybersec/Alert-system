@@ -1,0 +1,12 @@
+export { default as About } from './About';
+export { default as Careers } from './Careers';
+export { default as Features } from './Features';
+export { default as Footer } from './Footer';
+export { default as Hero } from './Hero';
+export { default as HowItWorks } from './HowItWorks';
+export { default as Municipalities } from './Municipalities';
+export { default as Navbar } from './Navbar';
+export { default as PrivacyPolicy } from './PrivacyPolicy';
+export { default as SuccessStories } from './SuccessStories';
+export { default as TermsOfService } from './TermsOfService';
+export { default as WhatsAppIntegration } from './WhatsAppIntegration';

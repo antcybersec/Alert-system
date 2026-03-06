@@ -1,0 +1,20 @@
+# Env and secrets
+.env
+.env.*
+!.env.example
+serviceAccountKey.json
+google-credentials.json
+
+# Dependencies
+node_modules
+
+# OS and logs
+.DS_Store
+*.log
+debug_errors.log
+
+# Build and cache
+dist
+dist-ssr
+*.local
+.cache
