@@ -12,7 +12,7 @@ export default function HowItWorks() {
         {
             step: 2,
             title: "Send a WhatsApp Message",
-            description: "Simply send 'Hi' to our dedicated WhatsApp number (+91 77008 07134). No apps to download.",
+            description: "Simply send 'Hi' to our dedicated WhatsApp number (+91 73196 62244). No apps to download.",
             icon: "💬"
         },
         {
@@ -77,7 +77,7 @@ export default function HowItWorks() {
                             Watch how easy it is to report an issue. The entire conversation happens in your local language.
                         </p>
                         <a
-                            href="https://wa.me/917700807134?text=Hi"
+                            href="https://wa.me/917319662244?text=Hi"
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex items-center gap-2 bg-[#25D366] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#20ba5a] transition-colors"

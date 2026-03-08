@@ -48,22 +48,9 @@ const WhatsAppSimulator = () => {
 
     const simulateBotResponse = (userInput) => {
         setIsTyping(true);
-        setTimeout(async () => {
-            let responseText = '';
-            const lowerInput = userInput.toLowerCase();
+        const lowerInput = (typeof userInput === 'string' ? userInput : '').toLowerCase();
 
-            if (lowerInput === '__image__' || lowerInput.startsWith('data:')) {
-                // Determine mock response for image
-                await new Promise(r => setTimeout(r, 1000)); // Simulate processing
-                responseText = `✅ *Verified & Accepted*\n\nIssue: Waste\nSeverity: Medium\n\nYour report has been sent to the authorities!\n\n📍 *Action Required:* Please reply with the *Location/Address* to finalize.`;
-            } else if (lowerInput.includes('start') || lowerInput.includes('hi')) {
-                responseText = 'Great! Please send a photo of the incident (Pothole, Garbage, etc).';
-            } else if (lowerInput.includes('status')) {
-                responseText = 'You can check your report status on the dashboard.';
-            } else {
-                responseText = 'I didn\'t understand that. Type "Start" to report an issue.';
-            }
-
+        const addBotReply = (responseText) => {
             setMessages(prev => [...prev, {
                 id: Date.now() + 1,
                 type: 'text',
@@ -72,32 +59,56 @@ const WhatsAppSimulator = () => {
                 time: getCurrentTime()
             }]);
             setIsTyping(false);
+        };
 
-            // Optional: Actually Trigger Webhook (Mock functionality)
-            if (lowerInput === '__image__' || lowerInput.startsWith('data:')) {
+        const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
+
+        if (lowerInput === '__image__' || (typeof userInput === 'string' && userInput.startsWith('data:'))) {
+            setTimeout(async () => {
+                let responseText = `✅ *Thank you!*\n\nYour picture and location have been received and sent to your nearest authorities. We will look into it shortly.`;
                 try {
-                    const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001';
-                    await fetch(`${API_BASE_URL}/api/whatsapp/webhook`, {
+                    const res = await fetch(`${API_BASE_URL}/api/whatsapp/simulate`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            messages: [{
-                                from: "919999999999",
-                                type: "image",
-                                // Use the input if it's a string (unlikely here) or use the last message if available
-                                // Better: Pass the data URI directly. We need to access it.
-                                image: {
-                                    link: userInput.startsWith('data:') ? userInput : "https://placehold.co/600x400/334155/FFFFFF?text=Simulated+Civic+Issue",
-                                    caption: "Simulated Report"
-                                }
-                            }]
-                        })
+                        body: JSON.stringify({ message: 'Photo', type: 'image', senderNumber: '919999999999' })
                     });
-                    toast.success("Report synced to Backend!");
-                } catch (e) { console.error("Webhook trigger failed", e); }
-            }
+                    const data = await res.json();
+                    if (data.replies && data.replies.length) responseText = data.replies.join('\n\n');
+                } catch (_) { /* use default */ }
+                addBotReply(responseText);
+            }, 1500);
+            return;
+        }
 
-        }, 1500);
+        // Text: call backend simulate to get real bot reply (Hi → language → location → photo flow)
+        (async () => {
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/whatsapp/simulate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: userInput, type: 'text', senderNumber: '919999999999' })
+                });
+                const data = await res.json();
+                if (data.replies && data.replies.length) {
+                    setTimeout(() => addBotReply(data.replies.join('\n\n')), 800);
+                    return;
+                }
+            } catch (e) { console.error("Simulate failed", e); }
+            // Fallback if backend unreachable
+            setTimeout(() => {
+                if (lowerInput.includes('start') || lowerInput.includes('hi') || lowerInput.includes('hello')) {
+                    addBotReply("Welcome to Nagar Alert! 🚨\n\nPlease choose your language:\n*1.* English\n*2.* Hindi");
+                } else if (/^(1|english|eng)$/.test(lowerInput)) {
+                    addBotReply("Please share your *location* (use the 📎 attachment button and choose Location).");
+                } else if (/^(2|hindi|hi|हिंदी)$/.test(lowerInput)) {
+                    addBotReply("कृपया अपना *लोकेशन* भेजें (📎 अटैचमेंट बटन से Location चुनें)।");
+                } else if (lowerInput.includes('status')) {
+                    addBotReply("You can check your report status on the dashboard.");
+                } else {
+                    addBotReply("Type *Hi* or *Start* to report an issue.");
+                }
+            }, 800);
+        })();
     };
 
     const getCurrentTime = () => {

@@ -39,21 +39,92 @@ async function downloadMedia(url) {
     }
 }
 
-// Helper: Send WhatsApp Message
+// Optional: when set, replies are pushed here instead of sending (for /simulate)
+let replyCollector = null;
+
+// Helper: Send WhatsApp Message (or collect reply when replyCollector is set)
 const sendMessage = async (to, message) => {
+    if (!to) return;
+    console.log(`🤖 [BOT REPLY] To ${to}: "${message.substring(0, 80)}..."`);
+    if (replyCollector) {
+        replyCollector.push(message);
+        return;
+    }
+    if (!WHAPI_URL || !WHAPI_TOKEN) {
+        console.warn("⚠️ WhatsApp API not configured (WHAPI_URL/WHAPI_TOKEN missing in .env). Reply not sent.");
+        return;
+    }
     try {
-        if (!to) return;
-        console.log(`🤖 [BOT REPLY] To ${to}: "${message}"`); // Log the reply for debugging
-        await axios.post(`${WHAPI_URL}/messages/text`, {
-            to,
-            body: message
-        }, {
+        const toNumber = String(to).replace(/\D/g, '');
+        const payload = { body: message, to: toNumber || to };
+        const url = `${WHAPI_URL.replace(/\/$/, '')}/messages/text`;
+        console.log("[Whapi] POST", url, "| to:", payload.to);
+        const resp = await axios.post(url, payload, {
             headers: { Authorization: `Bearer ${WHAPI_TOKEN}`, "Content-Type": "application/json" }
         });
+        console.log("[Whapi] Send OK", resp.status, resp.data ? JSON.stringify(resp.data).substring(0, 100) : "");
     } catch (error) {
-        console.error("WhatsApp Send Error:", error.response?.data || error.message);
+        console.error("WhatsApp Send Error:", error.response?.status, error.response?.data || error.message);
     }
 };
+
+// ==========================================
+// GUIDED FLOW: Hi → Language → Location → Photo → Thank you
+// ==========================================
+const FLOW_STATE = { IDLE: 'idle', AWAITING_LANGUAGE: 'awaiting_language', AWAITING_LOCATION: 'awaiting_location', AWAITING_PHOTO: 'awaiting_photo' };
+
+const FLOW_MESSAGES = {
+    en: {
+        askLanguage: "Welcome to Nagar Alert! 🚨\n\nPlease choose your language:\n*1.* English\n*2.* Hindi",
+        askLocation: "Please share your *location* (use the 📎 attachment button and choose Location).",
+        askPhoto: "Thank you! Now please send a *photo* of the issue (pothole, garbage, etc.).",
+        thankYou: "✅ *Thank you!*\n\nYour picture and location have been received and sent to your nearest authorities. We will look into it shortly."
+    },
+    hi: {
+        askLanguage: "Nagar Alert में आपका स्वागत है! 🚨\n\nकृपया अपनी भाषा चुनें:\n*1.* English\n*2.* Hindi",
+        askLocation: "कृपया अपना *लोकेशन* भेजें (📎 अटैचमेंट बटन से Location चुनें)।",
+        askPhoto: "धन्यवाद! अब कृपया समस्या की *फोटो* भेजें (गड्ढा, कचरा आदि)।",
+        thankYou: "✅ *धन्यवाद!*\n\nआपकी फोटो और लोकेशन प्राप्त हो गई है और आपके नज़दीकी अधिकारियों को भेज दी गई है। जल्द ही कार्रवाई की जाएगी।"
+    }
+};
+
+// In-memory state when Firebase is not available
+const memoryState = new Map();
+
+async function getFlowState(senderNumber) {
+    if (db) {
+        try {
+            const snap = await db.ref(`users/whatsapp_profiles/${senderNumber}`).once('value');
+            const profile = snap.val() || {};
+            const s = profile.conversationState;
+            if (s && s !== FLOW_STATE.IDLE) return { conversationState: s, conversationLanguage: profile.conversationLanguage || 'en', pendingLocation: profile.pendingLocation || null };
+        } catch (e) { /* ignore */ }
+    }
+    const mem = memoryState.get(senderNumber);
+    return mem && mem.conversationState !== FLOW_STATE.IDLE ? mem : null;
+}
+
+async function setFlowState(senderNumber, state) {
+    const toStore = { conversationState: state.conversationState, conversationLanguage: state.conversationLanguage || 'en', pendingLocation: state.pendingLocation || null };
+    if (db) {
+        try {
+            await db.ref(`users/whatsapp_profiles/${senderNumber}`).update(toStore);
+        } catch (e) {
+            console.warn("[Flow] Firebase update failed, using memory:", e.message);
+        }
+    }
+    memoryState.set(senderNumber, toStore);
+}
+
+async function clearFlowState(senderNumber) {
+    const idle = { conversationState: FLOW_STATE.IDLE, conversationLanguage: 'en', pendingLocation: null };
+    if (db) {
+        try {
+            await db.ref(`users/whatsapp_profiles/${senderNumber}`).update(idle);
+        } catch (e) { /* ignore */ }
+    }
+    memoryState.delete(senderNumber);
+}
 
 // Helper: Download Meta Cloud Media
 async function downloadMetaMedia(mediaId) {
@@ -171,10 +242,11 @@ async function processIncomingMessage(message, provider, metadata = {}) {
 
         // 1. Parse Provider Data
         if (provider === 'whapi') {
-            senderNumber = (message.chat_id || message.from).split('@')[0];
-            from = message.chat_id || message.from;
-            type = message.type;
-            body = message.text?.body || "";
+            const chatId = message.chat_id || message.from;
+            senderNumber = (typeof chatId === 'string' ? chatId : '').split('@')[0].replace(/\D/g, '') || String(message.from || '').replace(/\D/g, '');
+            from = chatId || message.from;
+            type = message.type || 'text';
+            body = (message.text && message.text.body) ? message.text.body : (message.body != null ? message.body : '');
             if (type === 'location') locationData = message.location;
         } else if (provider === 'meta') {
             senderNumber = message.from;
@@ -189,24 +261,114 @@ async function processIncomingMessage(message, provider, metadata = {}) {
 
         console.log(`[MSG] From: ${senderNumber} | Type: ${type}`);
 
-        // 2. Get User Profile
-        const waUserRef = db.ref(`users/whatsapp_profiles/${senderNumber}`);
-        const waUserSnap = await waUserRef.once('value');
-        let waUserProfile = waUserSnap.val() || {};
+        // ----- GUIDED FLOW: Hi → Language → Location → Photo → Thank you -----
+        const flowState = await getFlowState(senderNumber);
+        const lang = (flowState && flowState.conversationLanguage) || 'en';
+        const msgs = FLOW_MESSAGES[lang] || FLOW_MESSAGES.en;
 
-        // 3. Check Pending Reports
-        let pendingReport = null;
-        const userReportsSnap = await db.ref('reports').orderByChild('userPhone').equalTo(senderNumber).once('value');
-
-        if (userReportsSnap.exists()) {
-            const reports = Object.values(userReportsSnap.val());
-            reports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-            const latest = reports[0];
-
-            if (['Draft_Waiting_Name', 'Draft_Waiting_Location', 'Pending Address'].includes(latest.status)
-                && (new Date() - new Date(latest.createdAt) < 2 * 60 * 60 * 1000)) {
-                pendingReport = latest;
+        if (type === 'text') {
+            const text = (body || '').trim().toLowerCase();
+            console.log("[Flow] Text received:", JSON.stringify(text), "| flowState:", flowState?.conversationState || "none");
+            if ((text === 'hi' || text === 'hello' || text === 'start' || text === 'हैलो') && !flowState) {
+                console.log("[Flow] Matched Hi/Hello/Start → sending language choice");
+                await setFlowState(senderNumber, { conversationState: FLOW_STATE.AWAITING_LANGUAGE, conversationLanguage: 'en', pendingLocation: null });
+                await sendMessage(from, FLOW_MESSAGES.en.askLanguage);
+                return;
             }
+            if (flowState && flowState.conversationState === FLOW_STATE.AWAITING_LANGUAGE) {
+                const newLang = /^(2|hindi|हिंदी)$/.test(text) ? 'hi' : 'en';
+                await setFlowState(senderNumber, { conversationState: FLOW_STATE.AWAITING_LOCATION, conversationLanguage: newLang, pendingLocation: null });
+                await sendMessage(from, FLOW_MESSAGES[newLang].askLocation);
+                return;
+            }
+            if (flowState && flowState.conversationState === FLOW_STATE.AWAITING_LOCATION) {
+                await sendMessage(from, lang === 'hi' ? 'कृपया 📎 अटैचमेंट से *Location* भेजें।' : 'Please send your *location* using the 📎 attachment button.');
+                return;
+            }
+            if (flowState && flowState.conversationState === FLOW_STATE.AWAITING_PHOTO) {
+                await sendMessage(from, msgs.askPhoto);
+                return;
+            }
+        }
+
+        if (type === 'location' && locationData && flowState && flowState.conversationState === FLOW_STATE.AWAITING_LOCATION) {
+            const lat = locationData.latitude;
+            const lng = locationData.longitude;
+            const address = locationData.address || locationData.name || `${lat}, ${lng}`;
+            await setFlowState(senderNumber, { conversationState: FLOW_STATE.AWAITING_PHOTO, conversationLanguage: lang, pendingLocation: { latitude: lat, longitude: lng, address } });
+            await sendMessage(from, msgs.askPhoto);
+            return;
+        }
+
+        if (['image', 'video'].includes(type) && flowState && flowState.conversationState === FLOW_STATE.AWAITING_PHOTO) {
+            const pendingLoc = flowState.pendingLocation || {};
+            await sendMessage(from, "📷 " + (lang === 'hi' ? "फोटो प्राप्त हो रही है..." : "Receiving photo..."));
+            let mediaBase64 = null;
+            if (provider === 'meta' && (message.image?.id || message.video?.id)) {
+                const mid = message.image?.id || message.video?.id;
+                mediaBase64 = await downloadMetaMedia(mid);
+            } else if (provider === 'whapi') {
+                const link = (message.video?.link || message.video?.url) || (message.image?.link || message.image?.url);
+                mediaBase64 = link ? await downloadMedia(link) : null;
+            }
+            const reportId = uuidv4();
+            if (db) {
+                try {
+                    let publicMediaUrl = 'Pending';
+                    if (mediaBase64) {
+                        try {
+                            const { uploadBase64Media } = require('../services/storageService');
+                            const mimeType = type === 'video' ? 'video/mp4' : 'image/jpeg';
+                            publicMediaUrl = await uploadBase64Media(mediaBase64, mimeType, reportId);
+                        } catch (_) { /* ignore */ }
+                    }
+                    await db.ref(`reports/${reportId}`).set({
+                        id: reportId,
+                        type: 'Civic Issue',
+                        description: 'Report via guided WhatsApp flow',
+                        category: 'General',
+                        priority: 'Medium',
+                        imageUrl: publicMediaUrl,
+                        status: 'Verified',
+                        location: { latitude: pendingLoc.latitude, longitude: pendingLoc.longitude, address: pendingLoc.address },
+                        createdAt: new Date().toISOString(),
+                        userPhone: senderNumber,
+                        userLocation: pendingLoc.address
+                    });
+                } catch (e) {
+                    console.warn("[Flow] Report save failed:", e.message);
+                }
+            }
+            await clearFlowState(senderNumber);
+            await sendMessage(from, msgs.thankYou);
+            return;
+        }
+
+        // 2. Get User Profile (existing logic)
+        const waUserRef = db && db.ref ? db.ref(`users/whatsapp_profiles/${senderNumber}`) : null;
+        let waUserProfile = {};
+        if (waUserRef) {
+            try {
+                const waUserSnap = await waUserRef.once('value');
+                waUserProfile = waUserSnap.val() || {};
+            } catch (e) { /* ignore */ }
+        }
+
+        // 3. Check Pending Reports (only when DB available)
+        let pendingReport = null;
+        if (db) {
+            try {
+                const userReportsSnap = await db.ref('reports').orderByChild('userPhone').equalTo(senderNumber).once('value');
+                if (userReportsSnap.exists()) {
+                    const reports = Object.values(userReportsSnap.val());
+                    reports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    const latest = reports[0];
+                    if (['Draft_Waiting_Name', 'Draft_Waiting_Location', 'Pending Address'].includes(latest.status)
+                        && (new Date() - new Date(latest.createdAt) < 2 * 60 * 60 * 1000)) {
+                        pendingReport = latest;
+                    }
+                }
+            } catch (e) { /* ignore */ }
         }
 
         // ==========================================
@@ -433,10 +595,19 @@ async function processIncomingMessage(message, provider, metadata = {}) {
 
 exports.handleWebhook = async (req, res) => {
     try {
-        const body = req.body;
-        if (body.messages) {
-            for (const msg of body.messages) {
-                if (msg.from_me) continue;
+        const body = req.body || {};
+        const messages = body.messages || body.data?.messages || [];
+        console.log("[Webhook] Received. Keys:", Object.keys(body).join(", "), "| Messages count:", messages.length);
+        if (messages.length > 0) {
+            const msg = messages[0];
+            console.log("[Webhook] First message: type=", msg.type, "| from_me=", msg.from_me, "| text=", (msg.text?.body || msg.body || "").substring(0, 50));
+        }
+        if (messages.length > 0) {
+            for (const msg of messages) {
+                if (msg.from_me) {
+                    console.log("[Webhook] Skipping from_me message");
+                    continue;
+                }
                 await processIncomingMessage(msg, 'whapi');
             }
         } else if (body.object === 'whatsapp_business_account' && body.entry) {
@@ -465,6 +636,29 @@ exports.verifyWebhook = (req, res) => {
         return res.status(200).send(challenge);
     }
     res.status(403).send('Verification failed');
+};
+
+/**
+ * Simulate a message and return the bot reply (for in-app WhatsApp simulator).
+ * POST body: { message: "Hi", type?: "text"|"location", senderNumber?: "919999999999", location?: { latitude, longitude, address } }
+ */
+exports.simulate = async (req, res) => {
+    const replies = [];
+    replyCollector = replies;
+    try {
+        const { message, type = 'text', senderNumber = '919999999999', location } = req.body || {};
+        const chatId = `${String(senderNumber).replace(/\D/g, '')}@s.whatsapp.net`;
+        const fakeMsg = type === 'location' && location
+            ? { chat_id: chatId, from: senderNumber, type: 'location', location }
+            : { chat_id: chatId, from: senderNumber, type: 'text', text: { body: String(message || '') } };
+        await processIncomingMessage(fakeMsg, 'whapi');
+        res.json({ success: true, replies });
+    } catch (e) {
+        console.error("[Simulate] Error:", e);
+        res.status(500).json({ success: false, error: e.message, replies: replyCollector ? [...replyCollector] : [] });
+    } finally {
+        replyCollector = null;
+    }
 };
 
 exports.sendManualBroadcast = async (req, res) => {

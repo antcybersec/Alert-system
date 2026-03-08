@@ -64,6 +64,14 @@ npm run dev
 ### 3. Environment Variables (.env)
 Create a `.env` file in both `frontend` and `backend` using the provided `.env.sample`.
 
+### 4. WhatsApp "Hi" not replying? (Webhook must be public)
+When you send **Hi** to the bot number, Whapi.Cloud sends that message to your **webhook URL**. If your backend runs on **localhost**, Whapi cannot reach it.
+
+- **Option A – Local testing:** Use [ngrok](https://ngrok.com): run `ngrok http 5001`, copy the `https://xxx.ngrok.io` URL, then in [Whapi.Cloud](https://whapi.cloud) set the webhook to `https://xxx.ngrok.io/api/whatsapp/webhook`.
+- **Option B:** Deploy the backend (e.g. Render) and set the webhook to `https://your-app.onrender.com/api/whatsapp/webhook`.
+
+Restart the backend and watch the terminal: you should see `[Webhook] Received` and `[Flow] Matched Hi` when someone sends Hi. If you see `WhatsApp Send Error`, check `WHAPI_INSTANCE_URL` and `WHAPI_TOKEN` in `backend/.env`.
+
 ---
 
 ##  Bonus Features Implemented (6/6)
