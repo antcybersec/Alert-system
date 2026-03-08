@@ -65,7 +65,9 @@ export default function Hero() {
                 {/* CTA */}
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-5">
                     <a
-                        href="#whatsapp"
+                        href="https://wa.me/917700807134?text=Hi"
+                        target="_blank"
+                        rel="noreferrer"
                         className="px-8 py-4 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold shadow-xl hover:shadow-green-500/40 transition"
                     >
                         💬 Try on WhatsApp

@@ -1,11 +1,11 @@
-const admin = require('firebase-admin');
-const db = admin.database();
+const { db } = require('../config/firebase');
 const { generateCivicAlert } = require('../services/alertService');
 
 /**
  * Create and broadcast an alert automatically when a report is accepted
  */
 exports.createAutoAlert = async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database not configured. Add FIREBASE_DB_URL to .env' });
     const { reportId } = req.body;
 
     try {
@@ -64,6 +64,7 @@ exports.createAutoAlert = async (req, res) => {
  * Create manual alert from admin broadcast
  */
 exports.createManualAlert = async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database not configured. Add FIREBASE_DB_URL to .env' });
     const { reportId, customMessage } = req.body;
 
     try {
@@ -143,6 +144,7 @@ exports.createManualAlert = async (req, res) => {
  * Get all active alerts
  */
 exports.getActiveAlerts = async (req, res) => {
+    if (!db) return res.status(200).json({ alerts: [] });
     try {
         const alertsRef = db.ref('alerts');
         const snapshot = await alertsRef.orderByChild('status').equalTo('active').once('value');
@@ -167,6 +169,7 @@ exports.getActiveAlerts = async (req, res) => {
  * Dismiss an alert for a user
  */
 exports.dismissAlert = async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database not configured. Add FIREBASE_DB_URL to .env' });
     const { alertId, userId } = req.body;
 
     try {
@@ -196,6 +199,7 @@ exports.dismissAlert = async (req, res) => {
  * Increment view count
  */
 exports.incrementViewCount = async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database not configured. Add FIREBASE_DB_URL to .env' });
     const { alertId } = req.body;
 
     try {

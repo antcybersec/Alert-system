@@ -15,7 +15,10 @@ dotenv.config();
 // });
 
 // Mock initialization if no credentials (to prevent crash during dev setup)
-if (!admin.apps.length) {
+let db = null;
+let auth = null;
+
+if (!admin.apps.length && process.env.FIREBASE_DB_URL) {
     try {
         const path = require('path');
         const fs = require('fs');
@@ -47,14 +50,14 @@ if (!admin.apps.length) {
         }
 
         admin.initializeApp(config);
+        db = admin.database();
+        auth = admin.auth();
         console.log("Firebase Admin Successfully Initialized");
     } catch (error) {
         console.error("FIREBASE INITIALIZATION CRITICAL ERROR:", error);
-        // Ensure we don't return undefined if possible, or at least log why
     }
+} else if (!process.env.FIREBASE_DB_URL) {
+    console.warn("⚠️ FIREBASE_DB_URL not set — backend will start but DB/auth APIs will fail. Add a .env with Firebase config to enable full features.");
 }
-
-const db = admin.database(); // Realtime Database
-const auth = admin.auth();
 
 module.exports = { admin, db, auth };

@@ -66,7 +66,7 @@ const WhatsAppGuide = () => {
 
                             <div className="flex flex-col sm:flex-row gap-4 mb-12">
                                 <a
-                                    href="https://wa.me/919981478143?text=Start"
+                                    href="https://wa.me/917700807134?text=Start"
                                     target="_blank"
                                     rel="noreferrer"
                                     className="px-8 py-4 bg-[#25D366] hover:bg-[#128C7E] text-white rounded-2xl font-bold text-lg shadow-lg shadow-green-500/30 flex items-center justify-center gap-3 transition-all transform hover:-translate-y-1"
@@ -86,7 +86,7 @@ const WhatsAppGuide = () => {
 
                                 {!currentUser && (
                                     <div className="px-8 py-4 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center gap-2">
-                                        <QrCode size={20} /> <span className="font-mono">+91 99814 78143</span>
+                                        <QrCode size={20} /> <span className="font-mono">+91 77008 07134</span>
                                     </div>
                                 )}
                             </div>

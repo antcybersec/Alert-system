@@ -4,25 +4,20 @@ const { point } = require('@turf/helpers');
 const turfDistance = require('@turf/distance');
 const distance = turfDistance.default || turfDistance;
 
-// Initialize Vertex AI
-const vertex_ai = new VertexAI({
-    project: process.env.GCP_PROJECT_ID,
-    location: 'us-central1'
-});
-
-// --- FASTEST AVAILABLE MODEL ---
-// --- FASTEST AVAILABLE MODEL ---
-// Using Gemini 2.0 Flash (Version 001) for maximum speed
-const modelName = 'gemini-2.0-flash-001';
-console.log(`🚀 Speed Mode: Vertex AI Controller using '${modelName}'`);
-
-const generativeModel = vertex_ai.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-        maxOutputTokens: 2048,
-        temperature: 0.0, // Zero creativity for strict rule following
-    },
-});
+// Lazy-init Vertex AI only when GCP_PROJECT_ID is set
+let generativeModel = null;
+if (process.env.GCP_PROJECT_ID) {
+    try {
+        const vertex_ai = new VertexAI({ project: process.env.GCP_PROJECT_ID, location: 'us-central1' });
+        generativeModel = vertex_ai.getGenerativeModel({
+            model: 'gemini-2.0-flash-001',
+            generationConfig: { maxOutputTokens: 2048, temperature: 0.0 },
+        });
+        console.log(`🚀 Speed Mode: Vertex AI Controller using 'gemini-2.0-flash-001'`);
+    } catch (e) {
+        console.warn("⚠️ [reportController] Vertex AI init failed:", e.message);
+    }
+}
 
 const sanitizeKey = (key) => {
     if (!key) return "General";
@@ -36,9 +31,17 @@ exports.verifyReportImage = async (req, res) => {
         return res.status(400).json({ error: "No image/media provided" });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-        // Warning only, as we use Vertex AI service account primarily
-        console.warn("[AI WARNING] GEMINI_API_KEY missing - relying on Vertex AI credentials");
+    if (!generativeModel) {
+        return res.status(200).json({
+            analysis: {
+                verified: true,
+                department: "Municipal/Waste",
+                detected_issue: "Civic Issue (AI not configured)",
+                explanation: "ACCEPTED: Demo mode - add GCP_PROJECT_ID to .env for AI verification.",
+                severity: "Medium",
+                ai_confidence: 0
+            }
+        });
     }
 
     try {

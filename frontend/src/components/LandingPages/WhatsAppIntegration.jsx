@@ -77,7 +77,9 @@ export default function WhatsAppIntegration() {
 
                         {/* CTA */}
                         <a
-                            href="#"
+                            href="https://wa.me/917700807134?text=Start"
+                            target="_blank"
+                            rel="noreferrer"
                             className="inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold shadow-xl hover:shadow-green-500/40 transition"
                         >
                             💬 Try Demo on WhatsApp

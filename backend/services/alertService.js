@@ -1,21 +1,18 @@
 const { VertexAI } = require('@google-cloud/vertexai');
 require('dotenv').config();
 
-const vertex_ai = new VertexAI({
-    project: process.env.GCP_PROJECT_ID,
-    location: 'us-central1'
-});
-
-const modelName = 'gemini-2.0-flash-001';
-
-const generativeModel = vertex_ai.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-        maxOutputTokens: 256,
-        temperature: 0.7,
-        responseMimeType: 'application/json',
-    },
-});
+let generativeModel = null;
+if (process.env.GCP_PROJECT_ID) {
+    try {
+        const vertex_ai = new VertexAI({ project: process.env.GCP_PROJECT_ID, location: 'us-central1' });
+        generativeModel = vertex_ai.getGenerativeModel({
+            model: 'gemini-2.0-flash-001',
+            generationConfig: { maxOutputTokens: 256, temperature: 0.7, responseMimeType: 'application/json' },
+        });
+    } catch (e) {
+        console.warn("⚠️ [alertService] Vertex AI init failed:", e.message);
+    }
+}
 
 /**
  * Generate a concise civic alert from report data
@@ -23,6 +20,23 @@ const generativeModel = vertex_ai.getGenerativeModel({
  * @returns {Promise<Object>} - Alert data with title, message, emoji, urgency
  */
 exports.generateCivicAlert = async (reportData) => {
+    if (!generativeModel) {
+        const emoji = reportData.type?.toLowerCase().includes('pothole') ? '🚧' :
+            reportData.type?.toLowerCase().includes('fire') ? '🔥' :
+                reportData.type?.toLowerCase().includes('water') ? '💧' :
+                    reportData.type?.toLowerCase().includes('garbage') ? '🗑️' : '⚠️';
+        return {
+            success: false,
+            alert: {
+                emoji, title: reportData.type || 'Civic Alert',
+                message: `${emoji} ${reportData.type || 'Issue'} reported at ${reportData.location?.address || 'location'}`,
+                urgency: reportData.priority === 'High' ? 'high' : 'medium',
+                category: 'general',
+                affectedArea: reportData.location?.address || 'Unknown',
+                estimatedTime: null
+            }
+        };
+    }
     try {
         const prompt = `
 You are a civic alert generator. Create a SHORT, CLEAR, and ACTIONABLE alert for citizens.

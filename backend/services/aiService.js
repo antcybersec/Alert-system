@@ -1,58 +1,57 @@
 const { VertexAI } = require('@google-cloud/vertexai');
 require('dotenv').config();
 
-// Initialize Vertex AI
-// Initialize Vertex AI with Explicit Credentials for Render
-const vertexOptions = {
-    project: process.env.GCP_PROJECT_ID,
-    location: 'us-central1'
-};
+// Lazy-init Vertex AI only when GCP_PROJECT_ID is set (allows server to start without full config)
+let generativeModel = null;
+let chatModel = null;
 
-// If running on Render (or anywhere with the ENV var), inject credentials directly
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+if (process.env.GCP_PROJECT_ID) {
     try {
-        const credentials = typeof process.env.FIREBASE_SERVICE_ACCOUNT === 'string'
-            ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
-            : process.env.FIREBASE_SERVICE_ACCOUNT;
-
-        vertexOptions.googleAuthOptions = {
-            credentials: credentials
+        const vertexOptions = {
+            project: process.env.GCP_PROJECT_ID,
+            location: 'us-central1'
         };
-        console.log("✅ [Vertex AI] Initializing with explicit 'FIREBASE_SERVICE_ACCOUNT' credentials.");
+        if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+            try {
+                const credentials = typeof process.env.FIREBASE_SERVICE_ACCOUNT === 'string'
+                    ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+                    : process.env.FIREBASE_SERVICE_ACCOUNT;
+                vertexOptions.googleAuthOptions = { credentials };
+                console.log("✅ [Vertex AI] Initializing with explicit 'FIREBASE_SERVICE_ACCOUNT' credentials.");
+            } catch (err) {
+                console.error("❌ [Vertex AI] Failed to parse FIREBASE_SERVICE_ACCOUNT:", err.message);
+            }
+        }
+        const vertex_ai = new VertexAI(vertexOptions);
+        const modelName = 'gemini-2.0-flash-001';
+        console.log(`🚀 Speed Mode: Vertex AI using '${modelName}'`);
+        generativeModel = vertex_ai.getGenerativeModel({
+            model: modelName,
+            generationConfig: {
+                maxOutputTokens: 2048,
+                temperature: 0.4,
+                responseMimeType: 'application/json',
+            },
+        });
+        chatModel = vertex_ai.getGenerativeModel({
+            model: modelName,
+            generationConfig: {
+                maxOutputTokens: 500,
+                temperature: 0.7,
+            },
+        });
     } catch (err) {
-        console.error("❌ [Vertex AI] Failed to parse FIREBASE_SERVICE_ACCOUNT:", err.message);
+        console.warn("⚠️ [Vertex AI] Init failed:", err.message);
     }
+} else {
+    console.warn("⚠️ GCP_PROJECT_ID not set — AI features disabled. Add to .env to enable.");
 }
-
-const vertex_ai = new VertexAI(vertexOptions);
-
-// Using Gemini 2.0 Flash for maximum speed and multimodal capabilities
-const modelName = 'gemini-2.0-flash-001';
-
-console.log(`🚀 Speed Mode: Vertex AI using '${modelName}'`);
-
-const generativeModel = vertex_ai.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-        maxOutputTokens: 2048,
-        temperature: 0.4,
-        responseMimeType: 'application/json',
-    },
-});
-
-// 2. Chat Model (For "Rahul" Persona - Natural Language)
-const chatModel = vertex_ai.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-        maxOutputTokens: 500,
-        temperature: 0.7, // Higher temp for creative/human-like replies
-    },
-});
 
 /**
  * Generates a conversational reply based on the persona and context.
  */
 exports.generateChatReply = async (systemInstruction, userContext) => {
+    if (!chatModel) return "I received your message. Please share the location.";
     try {
         const prompt = `${systemInstruction}\n\nCONTEXT:\n${userContext}`;
         const result = await chatModel.generateContent({
@@ -71,6 +70,9 @@ exports.generateChatReply = async (systemInstruction, userContext) => {
  * @param {string} mimeType - Mime type (image/jpeg, video/mp4, audio/ogg, etc.)
  */
 exports.analyzeMedia = async (base64Data, mimeType) => {
+    if (!generativeModel) {
+        return { isReal: true, fakeReason: null, issue: "Reported Civic Issue", description: "AI not configured. (Add GCP_PROJECT_ID to .env)", priority: "Medium", category: "General", confidence: 0, eventType: 'General', department: 'General', aiSource: 'mock' };
+    }
     try {
         console.log(`[Vertex AI] Analyzing media (${mimeType}) with enhanced detection...`);
 
@@ -294,6 +296,9 @@ OUTPUT COMPREHENSIVE JSON:
  * @param {string} text - The user's text message
  */
 exports.analyzeText = async (text) => {
+    if (!generativeModel) {
+        return { isReal: true, fakeReason: null, issue: "Text Report", description: text, priority: "Medium", confidence: 0, category: "Other" };
+    }
     try {
         console.log(`[Vertex AI] Analyzing text: "${text.substring(0, 50)}..."`);
 
